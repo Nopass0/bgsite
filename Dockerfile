@@ -17,33 +17,23 @@ RUN bunx prisma generate
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN bun run build
 
-# Продакшн образ
-FROM oven/bun:1-slim AS runner
-WORKDIR /app
+# Образ для Nginx
+FROM nginx:alpine AS runner
 
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+# Копирование собранного приложения в директорию Nginx
+COPY --from=builder /app/.next/standalone /usr/share/nginx/html
+COPY --from=builder /app/.next/static /usr/share/nginx/html/.next/static
+COPY --from=builder /app/public /usr/share/nginx/html/public
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+# Копирование конфигурации Nginx
+COPY nginx.conf /etc/nginx/nginx.conf
 
-# Копирование необходимых файлов из builder
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
-COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
-COPY --from=builder --chown=nextjs:nodejs /app/next.config.js ./
+# Копирование SSL-сертификатов
+COPY ssl/certificate.crt /etc/ssl/certs/certificate.crt
+COPY ssl/certificate.key /etc/ssl/private/certificate.key
 
-# Установка только production зависимостей
-RUN bun install --production
-RUN bunx prisma generate
+# Открытие порта 443 для HTTPS
+EXPOSE 443
 
-USER nextjs
-
-EXPOSE 3000
-
-ENV PORT=3000
-ENV HOSTNAME="0.0.0.0"
-
-CMD ["bun", "server.js"]
+# Запуск Nginx
+CMD ["nginx", "-g", "daemon off;"]
